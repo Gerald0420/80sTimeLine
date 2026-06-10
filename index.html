@@ -73,6 +73,29 @@
   .dot.w{background:var(--world);color:var(--world);}
   .dot.p{background:var(--pop);color:var(--pop);}
 
+  /* ---------- search ---------- */
+  #search{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:80;width:min(340px,72vw);}
+  #searchBox{display:flex;align-items:center;gap:8px;background:rgba(20,20,22,.82);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:8px 14px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+  #searchInput{flex:1;background:none;border:none;outline:none;color:#fff;font-size:16px;letter-spacing:.01em;min-width:0;}
+  #searchInput::placeholder{color:#7b7b7b;}
+  #clearSearch{cursor:pointer;color:#8d8d8d;font-size:15px;line-height:1;display:none;padding-left:4px;}
+  #results{margin-top:8px;background:rgba(16,16,18,.96);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden auto;display:none;max-height:48vh;box-shadow:0 12px 30px rgba(0,0,0,.55);}
+  .res{display:flex;align-items:center;gap:10px;padding:9px 13px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);}
+  .res:last-child{border-bottom:none;}
+  .res:hover,.res.sel{background:rgba(255,255,255,.08);}
+  .res .rdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 7px currentColor;}
+  .res .rx{flex:1;min-width:0;}
+  .res .rt{font-size:13px;color:#eaeaea;font-weight:600;line-height:1.2;display:block;}
+  .res .rd{font-size:10px;color:#8d8d8d;letter-spacing:.07em;text-transform:uppercase;margin-top:2px;display:block;}
+  .res em{font-style:normal;color:#fff;background:rgba(255,255,255,.16);border-radius:3px;}
+  .noRes{padding:13px 14px;color:#8d8d8d;font-size:12px;text-align:center;}
+
+  /* ---------- "learn more" link ---------- */
+  .learn{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-size:11.5px;font-weight:700;letter-spacing:.02em;color:#fff;text-decoration:none;border:1px solid currentColor;border-radius:14px;padding:4px 11px;pointer-events:auto;transition:background .2s ease;}
+  .card.world .learn{color:var(--world);}
+  .card.pop .learn{color:var(--pop);}
+  .learn:hover{background:rgba(255,255,255,.09);}
+
   /* ---------- viewport / track ---------- */
   #viewport{position:fixed;inset:0;z-index:10;overflow:hidden;}
   #track{position:absolute;top:0;left:0;height:100%;will-change:transform;}
@@ -127,7 +150,7 @@
     margin-top:0;
   }
   .card.active{width:300px;z-index:60 !important;}
-  .card.active .desc{max-height:260px;opacity:1;margin-top:9px;}
+  .card.active .desc{max-height:340px;opacity:1;margin-top:9px;}
   .card.world.active .frame{border-color:var(--world);box-shadow:0 0 0 1px var(--world),0 18px 46px rgba(0,0,0,.7),0 0 38px rgba(70,198,255,0.35);}
   .card.pop.active   .frame{border-color:var(--pop);  box-shadow:0 0 0 1px var(--pop),  0 18px 46px rgba(0,0,0,.7),0 0 38px rgba(255,95,162,0.35);}
   .card .photo{background:var(--g, #222);}
@@ -206,6 +229,15 @@
       <span><i class="dot p"></i>Pop&nbsp;Culture</span>
     </div>
   </header>
+
+  <div id="search">
+    <div id="searchBox">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#cfcfcf" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+      <input id="searchInput" type="text" placeholder="Search the ’80s…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <span id="clearSearch">✕</span>
+    </div>
+    <div id="results"></div>
+  </div>
 
   <div id="viewport"><div id="track"></div></div>
 
@@ -321,6 +353,86 @@ const DATA = [
 {y:1989,mo:7,d:31,cat:'pop',g:G.purp,ic:'🎮',t:'The Game Boy',b:'Gaming goes portable.',x:'Nintendo’s Game Boy launched in North America in 1989, bundled with Tetris, and made handheld gaming an unstoppable worldwide craze.'}
 ];
 
+/* English Wikipedia article slug per event (keyed by title) */
+const WIKI = {
+  'Mount St. Helens Erupts':'1980_eruption_of_Mount_St._Helens',
+  'CNN Launches':'CNN',
+  'Iran–Iraq War Begins':'Iran–Iraq_War',
+  'Reagan Elected President':'1980_United_States_presidential_election',
+  'The Empire Strikes Back':'The_Empire_Strikes_Back',
+  'Pac-Man Fever':'Pac-Man',
+  '“Who Shot J.R.?”':'Who_shot_J.R.%3F',
+  'John Lennon Assassinated':'Murder_of_John_Lennon',
+  'Iran Hostages Freed':'Iran_hostage_crisis',
+  'Reagan Shot':'Attempted_assassination_of_Ronald_Reagan',
+  'Charles & Diana Wed':'Wedding_of_Charles,_Prince_of_Wales,_and_Lady_Diana_Spencer',
+  'The IBM PC':'IBM_Personal_Computer',
+  'First Woman on the Court':'Sandra_Day_O%27Connor',
+  'MTV Launches':'MTV',
+  'Raiders of the Lost Ark':'Raiders_of_the_Lost_Ark',
+  'The Falklands War':'Falklands_War',
+  'The Tylenol Crisis':'Chicago_Tylenol_murders',
+  'The Compact Disc':'Compact_disc',
+  'Vietnam Memorial Opens':'Vietnam_Veterans_Memorial',
+  'E.T. Phones Home':'E.T._the_Extra-Terrestrial',
+  'Michael Jackson’s Thriller':'Thriller_(album)',
+  'Commodore 64':'Commodore_64',
+  'The First Emoticon':'Emoticon',
+  'The Internet Is Born':'History_of_the_Internet',
+  'Sally Ride in Space':'Sally_Ride',
+  'KAL 007 Shot Down':'Korean_Air_Lines_Flight_007',
+  '“Star Wars” Defense':'Strategic_Defense_Initiative',
+  'M*A*S*H Finale':'Goodbye,_Farewell_and_Amen',
+  'Return of the Jedi':'Return_of_the_Jedi',
+  '“Thriller” Video Premieres':'Thriller_(music_video)',
+  'LA Summer Olympics':'1984_Summer_Olympics',
+  'Reagan’s Landslide':'1984_United_States_presidential_election',
+  'Bhopal Disaster':'Bhopal_disaster',
+  'The Macintosh':'Macintosh_128K',
+  'Ghostbusters':'Ghostbusters',
+  'Prince’s Purple Rain':'Purple_Rain_(album)',
+  'The Terminator':'The_Terminator',
+  'Band Aid':'Do_They_Know_It%27s_Christmas%3F',
+  'Gorbachev Takes Power':'Mikhail_Gorbachev',
+  'New Coke':'New_Coke',
+  'Titanic Wreck Found':'Wreck_of_the_Titanic',
+  'Live Aid':'Live_Aid',
+  '“We Are the World”':'We_Are_the_World',
+  'Back to the Future':'Back_to_the_Future',
+  'The Breakfast Club':'The_Breakfast_Club',
+  'Nintendo & Super Mario':'Super_Mario_Bros.',
+  'Challenger Disaster':'Space_Shuttle_Challenger_disaster',
+  'Chernobyl':'Chernobyl_disaster',
+  'Iran–Contra Affair':'Iran–Contra_affair',
+  'Lady Liberty at 100':'Statue_of_Liberty',
+  'Top Gun':'Top_Gun',
+  'Oprah Goes National':'The_Oprah_Winfrey_Show',
+  'Tyson, Youngest Champ':'Mike_Tyson',
+  'Black Monday':'Black_Monday_(1987)',
+  '“Tear Down This Wall”':'Tear_down_this_wall',
+  'Baby Jessica Rescued':'Rescue_of_Jessica_McClure',
+  'The Simpsons Debut':'The_Simpsons_shorts',
+  'Michael Jackson’s Bad':'Bad_(album)',
+  'U2’s The Joshua Tree':'The_Joshua_Tree',
+  'Dirty Dancing':'Dirty_Dancing',
+  'Lockerbie Bombing':'Pan_Am_Flight_103',
+  'Seoul Olympics':'1988_Summer_Olympics',
+  'Bush Elected':'1988_United_States_presidential_election',
+  'Who Framed Roger Rabbit':'Who_Framed_Roger_Rabbit',
+  'Die Hard':'Die_Hard',
+  'Rain Man':'Rain_Man',
+  'A Brief History of Time':'A_Brief_History_of_Time',
+  'Berlin Wall Falls':'Fall_of_the_Berlin_Wall',
+  'Tiananmen Square':'1989_Tiananmen_Square_protests_and_massacre',
+  'Exxon Valdez':'Exxon_Valdez_oil_spill',
+  'The World Wide Web':'World_Wide_Web',
+  'Batman':'Batman_(1989_film)',
+  'The Little Mermaid':'The_Little_Mermaid_(1989_film)',
+  'Seinfeld Pilot':'The_Seinfeld_Chronicles',
+  'The Game Boy':'Game_Boy'
+};
+const wikiURL = t => 'https://en.wikipedia.org/wiki/' + (WIKI[t] || encodeURIComponent(t.replace(/\s+/g,'_')));
+
 /* ============================================================
    layout / engine                                              */
 const MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -382,7 +494,7 @@ const els = CARDS.map(c=>{
          <div class="date"><span class="dot ${c.d.cat==='world'?'w':'p'}" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:currentColor;box-shadow:0 0 7px currentColor"></span><b>${c.d.d} ${MONTHS[c.d.mo]} ${c.d.y}</b></div>
          <div class="headline">${c.d.t}</div>
          <div class="blurb">${c.d.b}</div>
-         <div class="desc">${c.d.x}</div>
+         <div class="desc">${c.d.x}<a class="learn" href="${wikiURL(c.d.t)}" target="_blank" rel="noopener noreferrer">Read more on Wikipedia&nbsp;↗</a></div>
        </div>
      </div>`;
   card.addEventListener('click',()=>{ target = card._x - PAD; });
@@ -420,6 +532,66 @@ for(let y=Y0;y<=Y1;y++){
   scrub.appendChild(t); ticks.push({el:t,y});
 }
 
+/* ---- search ---- */
+const sInput   = document.getElementById('searchInput');
+const sResults = document.getElementById('results');
+const sClear   = document.getElementById('clearSearch');
+let selIdx = -1, curRes = [];
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+
+function runSearch(){
+  const q = sInput.value.trim();
+  sClear.style.display = q ? 'block' : 'none';
+  if(!q){ curRes=[]; sResults.style.display='none'; sResults.innerHTML=''; return; }
+  const ql = q.toLowerCase();
+  curRes = els.map((o,i)=>({o,i}))
+    .filter(({o})=>{
+      const d=o.data;
+      const hay = (d.t+' '+d.b+' '+d.x+' '+d.y+' '+MONTHS[d.mo]+' '+(d.cat==='world'?'world event':'pop culture')).toLowerCase();
+      return hay.includes(ql);
+    })
+    .sort((a,b)=> pos(a.o.data)-pos(b.o.data))
+    .slice(0,12);
+  if(!curRes.length){
+    sResults.innerHTML='<div class="noRes">No matches</div>';
+    sResults.style.display='block'; return;
+  }
+  if(selIdx>=curRes.length) selIdx=-1;
+  const re = new RegExp('('+escRe(q)+')','ig');
+  sResults.innerHTML = curRes.map(({o},k)=>{
+    const d=o.data;
+    const ttl = d.t.replace(re,'<em>$1</em>');
+    const col = d.cat==='world'?'var(--world)':'var(--pop)';
+    return `<div class="res${k===selIdx?' sel':''}" data-k="${k}">
+      <span class="rdot" style="color:${col};background:${col}"></span>
+      <span class="rx"><span class="rt">${ttl}</span><span class="rd">${d.d} ${MONTHS[d.mo]} ${d.y} · ${d.cat==='world'?'World':'Pop'}</span></span>
+    </div>`;
+  }).join('');
+  sResults.style.display='block';
+  sResults.querySelectorAll('.res').forEach(el=>{
+    el.addEventListener('click',()=>jumpTo(+el.dataset.k));
+  });
+}
+function jumpTo(k){
+  const r = curRes[k]; if(!r) return;
+  target = clamp(r.o.card._x - PAD, 0, maxScroll);
+  sResults.style.display='none';
+  sInput.blur();
+  hideHint();
+}
+sInput.addEventListener('input',()=>{ selIdx=-1; runSearch(); });
+sInput.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){ selIdx=Math.min(selIdx+1, curRes.length-1); runSearch(); e.preventDefault(); }
+  else if(e.key==='ArrowUp'){ selIdx=Math.max(selIdx-1, 0); runSearch(); e.preventDefault(); }
+  else if(e.key==='Enter'){ jumpTo(selIdx<0?0:selIdx); e.preventDefault(); }
+  else if(e.key==='Escape'){ sInput.value=''; runSearch(); sInput.blur(); }
+});
+sClear.addEventListener('click',()=>{ sInput.value=''; selIdx=-1; runSearch(); sInput.focus(); });
+// close the results when tapping anywhere outside the search box
+document.addEventListener('pointerdown',e=>{
+  if(!(e.target.closest && e.target.closest('#search'))) sResults.style.display='none';
+});
+
 /* ---- input ---- */
 vp.addEventListener('wheel',e=>{
   e.preventDefault();
@@ -430,6 +602,7 @@ vp.addEventListener('wheel',e=>{
 
 let dragging=false, lastX=0, moved=false;
 vp.addEventListener('pointerdown',e=>{
+  if(e.target.closest && e.target.closest('a')) return;   // let Wikipedia links tap through
   dragging=true; moved=false; lastX=e.clientX; vel=0;
   document.body.classList.add('grabbing');
   vp.setPointerCapture(e.pointerId);
@@ -448,6 +621,7 @@ vp.addEventListener('pointerup',endDrag);
 vp.addEventListener('pointercancel',endDrag);
 
 window.addEventListener('keydown',e=>{
+  if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')) return;
   if(e.key==='ArrowRight'||e.key==='ArrowDown'){ step(1); e.preventDefault(); }
   else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ step(-1); e.preventDefault(); }
   else if(e.key==='Home'){ target=0; }
