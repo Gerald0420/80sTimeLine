@@ -1,0 +1,6 @@
+# Private, local-only image build (may include copyrighted fair-use images).
+# Never commit or publish this folder — it is for personal local viewing only.
+private/
+
+node_modules/
+.DS_Store

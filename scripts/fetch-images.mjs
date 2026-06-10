@@ -3,21 +3,28 @@
  * fetch-images.mjs — download FREE (Wikimedia Commons) images for the timeline
  * ----------------------------------------------------------------------------
  * Run this where you have open network access (your laptop, or a Claude Code
- * web session whose network policy allows wikimedia.org):
+ * web session whose network policy allows wikimedia.org).
  *
- *     node scripts/fetch-images.mjs
+ *   PUBLIC build (safe to deploy) — free Wikimedia Commons images only:
+ *       node scripts/fetch-images.mjs
+ *     → writes /images (commit these; they get served on your public site)
+ *
+ *   PRIVATE build (LOCAL USE ONLY) — every lead image, posters/covers too:
+ *       node scripts/fetch-images.mjs --all
+ *     → writes /private (gitignored; NEVER published). For your eyes only.
  *
  * What it does:
  *   • For every event it tries a prioritized list of Wikipedia articles
- *     (the event's own article first, then curated free-image alternatives
- *     such as the performer, the hardware, or the venue).
- *   • It ONLY accepts an image whose thumbnail is served from
- *     /wikipedia/commons/ — i.e. hosted on Wikimedia Commons, which accepts
- *     only freely-licensed (public-domain / Creative Commons) media. Local
- *     fair-use files (/wikipedia/en/) are rejected, so nothing copyrighted is
- *     ever stored.
- *   • Saves images to /images, writes images/manifest.json (consumed by
- *     index.html) and images/CREDITS.md (author + license for every image).
+ *     (the event's own article first, then curated alternatives such as the
+ *     performer, the hardware, or the venue).
+ *   • PUBLIC build accepts an image ONLY if its thumbnail is served from
+ *     /wikipedia/commons/ — Wikimedia Commons hosts only freely-licensed
+ *     (public-domain / CC) media, so nothing copyrighted is stored.
+ *   • PRIVATE build (--all) accepts whatever the article's lead image is,
+ *     including local fair-use posters and album covers, for personal
+ *     offline viewing only.
+ *   • Writes manifest.json (consumed by index.html) and a credits/sources
+ *     file alongside the images.
  *
  * Requires Node 18+ (uses global fetch).
  * ==========================================================================*/
@@ -26,7 +33,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const IMG_DIR = join(ROOT, 'images');
+const ALL = process.argv.includes('--all') || process.argv.includes('--private');
+const IMG_DIR = join(ROOT, ALL ? 'private' : 'images');   // private/ is gitignored
+const MANIFEST_PATH = join(IMG_DIR, 'manifest.json');
+const CREDITS_PATH = join(IMG_DIR, ALL ? 'SOURCES.md' : 'CREDITS.md');
 const UA = '80sTimeline-image-fetch/1.0 (https://github.com/Gerald0420/80sTimeLine)';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const strip = s => (s ? String(s).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '');
@@ -108,8 +118,9 @@ async function leadImage(title) {
   if (!pages) return null;
   const pg = pages[Object.keys(pages)[0]];
   const thumb = pg && pg.thumbnail && pg.thumbnail.source;
-  if (!thumb || !thumb.includes('/commons/')) return null; // free (Commons) only
-  return { thumb, file: pg.pageimage };
+  if (!thumb) return null;
+  if (!ALL && !thumb.includes('/commons/')) return null;   // public build: Commons (free) only
+  return { thumb, file: pg.pageimage, free: thumb.includes('/commons/') };
 }
 
 async function creditFor(file) {
@@ -142,6 +153,9 @@ async function download(url, dest) {
 }
 
 async function main() {
+  console.log(ALL
+    ? '⚠  PRIVATE build — downloading ALL lead images (incl. copyrighted fair-use)\n   into /private. This folder is gitignored: keep it local, do NOT publish.\n'
+    : 'PUBLIC build — downloading FREE Wikimedia Commons images only into /images.\n');
   await mkdir(IMG_DIR, { recursive: true });
   const events = await loadEvents();
   const manifest = {};
@@ -174,14 +188,15 @@ async function main() {
     await sleep(150);
   }
 
-  await writeFile(join(IMG_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  await writeFile(
-    join(IMG_DIR, 'CREDITS.md'),
-    `# Image credits\n\nAll images below are hosted on Wikimedia Commons under public-domain or Creative Commons licenses.\n\n${credits.sort().join('\n')}\n`
-  );
+  await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+  const header = ALL
+    ? '# Private image sources — LOCAL USE ONLY\n\nThese images were pulled from Wikipedia for personal, offline viewing and may include copyrighted, fair-use material. Do NOT redistribute or deploy them publicly.\n\n'
+    : '# Image credits\n\nAll images below are hosted on Wikimedia Commons under public-domain or Creative Commons licenses.\n\n';
+  await writeFile(CREDITS_PATH, header + credits.sort().join('\n') + '\n');
 
-  console.log(`\nDone. ${Object.keys(manifest).length} images saved, ${skipped.length} left as stylized art.`);
-  if (skipped.length) console.log('No free image found for:\n  ' + skipped.join('\n  '));
+  console.log(`\nDone. ${Object.keys(manifest).length} images saved to /${ALL ? 'private' : 'images'}, ${skipped.length} ${ALL ? 'had no image' : 'left as stylized art'}.`);
+  if (skipped.length) console.log('No image found for:\n  ' + skipped.join('\n  '));
+  if (ALL) console.log('\nView locally:  npx serve .   (or: python3 -m http.server)\nthen open the printed http://localhost URL — the private images load automatically.');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
