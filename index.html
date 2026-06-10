@@ -96,6 +96,19 @@
   .card.pop .learn{color:var(--pop);}
   .learn:hover{background:rgba(255,255,255,.09);}
 
+  /* ---------- rewind / "back to last card" button ---------- */
+  #rewind{position:fixed;left:16px;bottom:66px;z-index:70;width:46px;height:46px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    background:rgba(20,20,22,.82);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,.16);box-shadow:0 8px 22px rgba(0,0,0,.5);
+    opacity:0;pointer-events:none;transform:scale(.9);
+    transition:opacity .25s ease,transform .25s ease,border-color .2s,background .2s;}
+  #rewind.on{opacity:1;pointer-events:auto;transform:scale(1);}
+  #rewind:active{background:rgba(70,198,255,.2);border-color:var(--world);}
+  #rewind svg{width:21px;height:21px;stroke:#eaeaea;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  #rewind .lbl{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);
+    font-size:8px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;}
+
   /* ---------- viewport / track ---------- */
   #viewport{position:fixed;inset:0;z-index:10;overflow:hidden;touch-action:none;}
   #track{position:absolute;top:0;left:0;height:100%;will-change:transform;}
@@ -259,6 +272,11 @@
   </div>
 
   <div id="hint"><b>Swipe</b> or <b>scroll</b> &nbsp;·&nbsp; <b>tap</b> a card &nbsp;·&nbsp; pause on the needle to read</div>
+
+  <div id="rewind" title="Back to last centered card (B)">
+    <svg viewBox="0 0 24 24"><polyline points="11 7 6 12 11 17"/><path d="M6 12h7a5 5 0 0 1 0 10h-1"/></svg>
+    <span class="lbl">Back</span>
+  </div>
 
 <script>
 /* ============================================================
@@ -655,8 +673,9 @@ window.addEventListener('keydown',e=>{
   if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')) return;
   if(e.key==='ArrowRight'||e.key==='ArrowDown'){ step(1); e.preventDefault(); }
   else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ step(-1); e.preventDefault(); }
-  else if(e.key==='Home'){ target=0; }
-  else if(e.key==='End'){ target=maxScroll; }
+  else if(e.key==='Home'){ target=0; snapAfterRest=true; }
+  else if(e.key==='End'){ target=maxScroll; snapAfterRest=true; }
+  else if(e.key==='Backspace' || e.key==='b' || e.key==='B'){ rewind(); e.preventDefault(); }
 });
 function step(dir){
   hideHint();
@@ -764,6 +783,31 @@ function fetchCredit(o, file){
 }
 
 /* ============================================================
+   rewind — return to the last headline that rested on the needle.
+   Guards against an accidental graze flinging you off a card.        */
+const rewindBtn = document.getElementById('rewind');
+let visitStack = [], anchor = -1, navigating = false, lastRest = -1, lastCanRewind = null;
+const aX = i => clamp(els[i].card._x - PAD, 0, maxScroll);   // scroll pos that centers card i
+
+function onSettle(C){
+  if(navigating){ anchor = C; navigating = false; return; }  // arrived via a rewind — just adopt it
+  if(C !== anchor){
+    if(anchor !== -1) visitStack.push(anchor);               // remember where we were
+    anchor = C;
+  }
+}
+function rewind(){
+  if(anchor >= 0 && Math.abs(cur - aX(anchor)) > 12){        // drifted off it → snap back to it
+    navigating = true; target = aX(anchor); snapAfterRest = true; hideHint(); return;
+  }
+  if(visitStack.length){                                     // already there → step back in history
+    const prev = visitStack.pop();
+    navigating = true; target = aX(prev); snapAfterRest = true; hideHint();
+  }
+}
+rewindBtn.addEventListener('click', rewind);
+
+/* ============================================================
    render loop                                                  */
 const CENTER = ()=>W/2;
 function frame(){
@@ -833,6 +877,16 @@ function frame(){
     rdCat.textContent = 'scrub the decade';
     rdCat.style.color = 'var(--dim)';
   }
+
+  // record the card we come to rest on, and show/hide the rewind button
+  const resting = !dragging && Math.abs(vel) < 0.5 && Math.abs(target - cur) < 1;
+  if(resting && activeIdx >= 0){
+    if(lastRest !== activeIdx){ onSettle(activeIdx); lastRest = activeIdx; }
+  } else if(!resting){
+    lastRest = -1;
+  }
+  const canRewind = visitStack.length > 0 || (anchor >= 0 && Math.abs(cur - aX(anchor)) > 12);
+  if(canRewind !== lastCanRewind){ rewindBtn.classList.toggle('on', canRewind); lastCanRewind = canRewind; }
 
   // scrubber
   const p = maxScroll>0 ? cur/maxScroll : 0;
