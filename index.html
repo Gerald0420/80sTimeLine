@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>The 1980s — An Interactive Timeline</title>
+<style>
+  :root{
+    --world:#46c6ff;   /* world events  */
+    --pop:#ff5fa2;     /* pop culture   */
+    --ink:#eaeaea;
+    --dim:#8d8d8d;
+    --groove:rgba(255,255,255,0.028);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;overflow:hidden;background:#000;}
+  body{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    cursor:grab;
+    user-select:none;
+    position:relative;
+  }
+  body.grabbing{cursor:grabbing;}
+
+  /* ---------- the record surface ---------- */
+  #surface{
+    position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg,
+        var(--groove) 0px, var(--groove) 1px,
+        transparent 1px, transparent 4px),
+      repeating-linear-gradient(0deg,
+        rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 2px,
+        transparent 2px, transparent 9px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, #1c1c1f 0%, #0a0a0b 55%, #000 100%);
+  }
+  /* moving sheen, like light catching the vinyl */
+  #sheen{
+    position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(105deg,
+      transparent 38%,
+      rgba(255,255,255,0.05) 47%,
+      rgba(255,255,255,0.09) 50%,
+      rgba(255,255,255,0.05) 53%,
+      transparent 62%);
+    background-size:300% 100%;
+    animation:sheen 14s linear infinite;
+    mix-blend-mode:screen;
+  }
+  @keyframes sheen{from{background-position:160% 0;}to{background-position:-60% 0;}}
+  #vignette{
+    position:fixed;inset:0;z-index:2;pointer-events:none;
+    box-shadow:inset 0 0 220px 60px rgba(0,0,0,0.9);
+  }
+
+  /* ---------- header ---------- */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:30;
+    padding:18px 26px 0;pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-start;
+  }
+  .title{line-height:1;}
+  .title h1{
+    font-size:30px;font-weight:800;letter-spacing:.14em;
+    background:linear-gradient(90deg,#fff,#bdbdbd);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .title p{font-size:11px;letter-spacing:.42em;color:var(--dim);margin-top:6px;text-transform:uppercase;}
+  .legend{display:flex;gap:16px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);}
+  .legend span{display:flex;align-items:center;gap:7px;}
+  .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 9px currentColor;}
+  .dot.w{background:var(--world);color:var(--world);}
+  .dot.p{background:var(--pop);color:var(--pop);}
+
+  /* ---------- viewport / track ---------- */
+  #viewport{position:fixed;inset:0;z-index:10;overflow:hidden;}
+  #track{position:absolute;top:0;left:0;height:100%;will-change:transform;}
+
+  /* giant ghost year numbers in the background */
+  .yearMark{
+    position:absolute;top:50%;transform:translate(-50%,-50%);
+    font-size:30vh;font-weight:800;letter-spacing:-.04em;
+    color:rgba(255,255,255,0.035);
+    pointer-events:none;z-index:1;white-space:nowrap;
+  }
+
+  /* ---------- event cards ---------- */
+  .card{
+    position:absolute;width:180px;
+    transform:translate(-50%,-50%);
+    transform-origin:center center;
+    z-index:5;cursor:pointer;
+    transition:width .38s cubic-bezier(.2,.8,.2,1);
+  }
+  .frame{
+    background:linear-gradient(180deg,#1b1b1e,#0d0d0f);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:10px;
+    box-shadow:0 14px 34px rgba(0,0,0,0.6);
+    overflow:hidden;
+    transition:box-shadow .38s ease,border-color .38s ease;
+  }
+  .photo{
+    position:relative;height:104px;display:flex;align-items:center;justify-content:center;
+    font-size:50px;
+    border-bottom:1px solid rgba(255,255,255,0.07);
+    text-shadow:0 4px 12px rgba(0,0,0,.6);
+  }
+  .photo::after{ /* polaroid sheen */
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(135deg,rgba(255,255,255,0.16),transparent 45%);
+    pointer-events:none;
+  }
+  .meta{padding:9px 11px 11px;}
+  .date{
+    font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim);margin-bottom:4px;display:flex;align-items:center;gap:6px;
+  }
+  .date b{font-weight:700;}
+  .headline{font-size:13px;font-weight:700;line-height:1.25;}
+  .blurb{font-size:11px;color:#b9b9b9;margin-top:4px;font-style:italic;line-height:1.3;}
+  .desc{
+    max-height:0;opacity:0;overflow:hidden;
+    font-size:11.5px;line-height:1.5;color:#cfcfcf;
+    transition:max-height .42s ease,opacity .35s ease,margin .42s ease;
+    margin-top:0;
+  }
+  .card.active{width:300px;z-index:60 !important;}
+  .card.active .desc{max-height:260px;opacity:1;margin-top:9px;}
+  .card.world.active .frame{border-color:var(--world);box-shadow:0 0 0 1px var(--world),0 18px 46px rgba(0,0,0,.7),0 0 38px rgba(70,198,255,0.35);}
+  .card.pop.active   .frame{border-color:var(--pop);  box-shadow:0 0 0 1px var(--pop),  0 18px 46px rgba(0,0,0,.7),0 0 38px rgba(255,95,162,0.35);}
+  .card .photo{background:var(--g, #222);}
+  /* connector stem to the groove line */
+  .stem{
+    position:absolute;left:50%;width:1px;background:linear-gradient(currentColor,transparent);
+    opacity:.5;z-index:1;
+  }
+  .card.world{color:var(--world);}
+  .card.pop{color:var(--pop);}
+
+  /* ---------- the stylus / needle ---------- */
+  #needle{position:fixed;top:0;bottom:0;left:50%;width:0;z-index:25;pointer-events:none;transform:translateX(-.5px);}
+  #needle .line{
+    position:absolute;top:14%;bottom:14%;left:0;width:1px;
+    background:linear-gradient(180deg,transparent,rgba(255,255,255,.5),rgba(255,255,255,.18),transparent);
+  }
+  #needle .tip{
+    position:absolute;top:50%;left:0;width:13px;height:13px;border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(circle at 35% 30%,#fff,#9fe9ff 40%,#1480a8 100%);
+    box-shadow:0 0 16px rgba(120,220,255,.9),0 0 4px #fff;
+  }
+  #readout{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-130px);
+    z-index:26;text-align:center;pointer-events:none;
+    transition:transform .3s ease;
+  }
+  #readout .rd-date{font-size:12px;letter-spacing:.34em;color:#fff;text-transform:uppercase;}
+  #readout .rd-cat{font-size:9px;letter-spacing:.3em;color:var(--dim);margin-top:4px;text-transform:uppercase;}
+
+  /* ---------- bottom scrubber ---------- */
+  #scrub{
+    position:fixed;left:6%;right:6%;bottom:30px;z-index:30;
+    height:40px;pointer-events:none;
+  }
+  #scrubBar{
+    position:absolute;left:0;right:0;top:22px;height:2px;
+    background:rgba(255,255,255,0.12);border-radius:2px;
+  }
+  #scrubFill{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,var(--world),var(--pop));border-radius:2px;width:0;}
+  .tick{position:absolute;top:14px;transform:translateX(-50%);text-align:center;}
+  .tick i{display:block;width:1px;height:9px;background:rgba(255,255,255,0.25);margin:0 auto 5px;}
+  .tick span{font-size:10px;letter-spacing:.1em;color:var(--dim);transition:color .25s,transform .25s;}
+  .tick.on span{color:#fff;transform:scale(1.18);font-weight:700;}
+  #playhead{position:absolute;top:18px;width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 10px #fff;transform:translate(-50%,-50%);left:0;}
+
+  /* ---------- hint ---------- */
+  #hint{
+    position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:30;
+    font-size:11px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;
+    transition:opacity .8s ease;pointer-events:none;text-align:center;
+  }
+  #hint b{color:#cfcfcf;font-weight:600;}
+  @keyframes fadeup{from{opacity:0;transform:translate(0,10px);}to{opacity:1;}}
+
+  @media (max-width:640px){
+    .title h1{font-size:22px;}
+    .legend{flex-direction:column;gap:6px;}
+    .yearMark{font-size:22vh;}
+  }
+</style>
+</head>
+<body>
+  <div id="surface"></div>
+  <div id="sheen"></div>
+  <div id="vignette"></div>
+
+  <header>
+    <div class="title">
+      <h1>THE&nbsp;1980s</h1>
+      <p>A decade in headlines</p>
+    </div>
+    <div class="legend">
+      <span><i class="dot w"></i>World&nbsp;Events</span>
+      <span><i class="dot p"></i>Pop&nbsp;Culture</span>
+    </div>
+  </header>
+
+  <div id="viewport"><div id="track"></div></div>
+
+  <div id="needle"><div class="line"></div><div class="tip"></div></div>
+  <div id="readout"><div class="rd-date">1980</div><div class="rd-cat">scroll to begin</div></div>
+
+  <div id="scrub">
+    <div id="scrubBar"><div id="scrubFill"></div></div>
+    <div id="playhead"></div>
+  </div>
+
+  <div id="hint"><b>Scroll</b> or <b>drag</b> &nbsp;·&nbsp; <b>← →</b> to step &nbsp;·&nbsp; pause on the needle to read</div>
+
+<script>
+/* ============================================================
+   1980s Interactive Timeline — data
+   cat: 'world' (upper groove) | 'pop' (lower groove)
+   g  : polaroid gradient                                       */
+const G = {
+  blue:'linear-gradient(135deg,#16455f,#0a2230)',
+  red :'linear-gradient(135deg,#5e1f2a,#2a0d12)',
+  gold:'linear-gradient(135deg,#5e4a16,#2a1f08)',
+  purp:'linear-gradient(135deg,#3c1f5e,#170a2a)',
+  teal:'linear-gradient(135deg,#155b53,#08231f)',
+  grey:'linear-gradient(135deg,#3a3a3f,#141416)',
+  rose:'linear-gradient(135deg,#5e1f4a,#2a0d20)'
+};
+const DATA = [
+/* 1980 */
+{y:1980,mo:5,d:18,cat:'world',g:G.red, ic:'🌋',t:'Mount St. Helens Erupts',b:'A volcano blows its top.',x:'On May 18, 1980, Mount St. Helens in Washington State erupted catastrophically, killing 57 people and burying the region in ash. It remains the deadliest and most destructive volcanic event in U.S. history.'},
+{y:1980,mo:6,d:1, cat:'world',g:G.blue,ic:'📺',t:'CNN Launches',b:'The first 24-hour news network.',x:'Ted Turner launched the Cable News Network on June 1, 1980, pioneering round-the-clock television news and forever changing how the world consumed current events.'},
+{y:1980,mo:9,d:22,cat:'world',g:G.grey,ic:'💥',t:'Iran–Iraq War Begins',b:'A brutal eight-year conflict.',x:'Iraq invaded Iran in September 1980, igniting one of the longest conventional wars of the 20th century — a grinding stalemate that lasted until 1988.'},
+{y:1980,mo:11,d:4,cat:'world',g:G.gold,ic:'🇺🇸',t:'Reagan Elected President',b:'A landslide ushers in the ’80s.',x:'Ronald Reagan defeated incumbent Jimmy Carter on November 4, 1980, beginning a conservative era that would define the decade’s politics and economics.'},
+{y:1980,mo:5,d:21,cat:'pop',g:G.blue,ic:'⚔️',t:'The Empire Strikes Back',b:'“No, I am your father.”',x:'The second Star Wars film premiered May 21, 1980, delivering one of cinema’s greatest twists and cementing the saga as a generational touchstone.'},
+{y:1980,mo:5,d:22,cat:'pop',g:G.gold,ic:'🟡',t:'Pac-Man Fever',b:'Arcades are never the same.',x:'Released in 1980, Pac-Man became a global phenomenon, drawing crowds to arcades and proving video games could appeal to everyone — not just sci-fi fans.'},
+{y:1980,mo:11,d:21,cat:'pop',g:G.gold,ic:'🤠',t:'“Who Shot J.R.?”',b:'350M tune in to Dallas.',x:'The resolution to Dallas’s cliffhanger aired November 21, 1980, drawing a record television audience and inventing the modern season-ending cliffhanger.'},
+{y:1980,mo:12,d:8,cat:'pop',g:G.grey,ic:'🎸',t:'John Lennon Assassinated',b:'The world mourns a Beatle.',x:'On December 8, 1980, John Lennon was shot and killed outside his New York apartment, shocking the world and prompting candlelight vigils across the globe.'},
+/* 1981 */
+{y:1981,mo:1,d:20,cat:'world',g:G.gold,ic:'🎗️',t:'Iran Hostages Freed',b:'444 days of captivity end.',x:'Minutes after Reagan’s inauguration on January 20, 1981, 52 American hostages held in Tehran were released, ending a 444-day crisis that had gripped the nation.'},
+{y:1981,mo:3,d:30,cat:'world',g:G.red, ic:'🔫',t:'Reagan Shot',b:'The President survives.',x:'John Hinckley Jr. shot President Reagan outside a Washington hotel on March 30, 1981. Reagan recovered, quipping to his surgeons, “I hope you’re all Republicans.”'},
+{y:1981,mo:7,d:29,cat:'world',g:G.purp,ic:'👰',t:'Charles & Diana Wed',b:'A global fairytale wedding.',x:'An estimated 750 million people worldwide watched Prince Charles marry Lady Diana Spencer at St Paul’s Cathedral on July 29, 1981.'},
+{y:1981,mo:8,d:12,cat:'world',g:G.blue,ic:'💻',t:'The IBM PC',b:'Personal computing goes mainstream.',x:'IBM released its Personal Computer on August 12, 1981, setting the hardware standard that would define the PC industry for decades to come.'},
+{y:1981,mo:9,d:25,cat:'world',g:G.teal,ic:'⚖️',t:'First Woman on the Court',b:'Sandra Day O’Connor confirmed.',x:'Sandra Day O’Connor was sworn in as the first female U.S. Supreme Court Justice in September 1981, a landmark moment for women in American law.'},
+{y:1981,mo:8,d:1, cat:'pop',g:G.rose,ic:'🎬',t:'MTV Launches',b:'“Video Killed the Radio Star.”',x:'MTV debuted August 1, 1981, launching the music-video era and reshaping pop music, fashion, and youth culture for an entire generation.'},
+{y:1981,mo:6,d:12,cat:'pop',g:G.gold,ic:'🎩',t:'Raiders of the Lost Ark',b:'Indiana Jones cracks his whip.',x:'Spielberg and Lucas’s adventure premiered in June 1981, introducing Indiana Jones and becoming the highest-grossing film of the year.'},
+/* 1982 */
+{y:1982,mo:4,d:2, cat:'world',g:G.blue,ic:'🇬🇧',t:'The Falklands War',b:'Britain and Argentina clash.',x:'Argentina invaded the Falkland Islands in April 1982, prompting a ten-week war in the South Atlantic that the United Kingdom ultimately won.'},
+{y:1982,mo:10,d:1,cat:'world',g:G.red, ic:'💊',t:'The Tylenol Crisis',b:'Poisonings change packaging forever.',x:'Cyanide-laced Tylenol killed seven people in Chicago in 1982, leading to tamper-proof packaging and a textbook example of corporate crisis response.'},
+{y:1982,mo:8,d:17,cat:'world',g:G.teal,ic:'💿',t:'The Compact Disc',b:'Digital audio arrives.',x:'The first commercial CDs and players went on sale in 1982, beginning the long shift from analog records and tapes to crisp digital sound.'},
+{y:1982,mo:11,d:13,cat:'world',g:G.grey,ic:'🪖',t:'Vietnam Memorial Opens',b:'The Wall is dedicated.',x:'Maya Lin’s Vietnam Veterans Memorial was dedicated November 13, 1982, its black granite wall honoring more than 58,000 fallen service members.'},
+{y:1982,mo:6,d:11,cat:'pop',g:G.blue,ic:'👽',t:'E.T. Phones Home',b:'Spielberg’s beloved alien.',x:'E.T. the Extra-Terrestrial premiered June 11, 1982, becoming the highest-grossing film of the decade and a symbol of ’80s childhood wonder.'},
+{y:1982,mo:11,d:30,cat:'pop',g:G.red, ic:'🧟',t:'Michael Jackson’s Thriller',b:'The best-selling album ever.',x:'Released November 30, 1982, Thriller went on to become the best-selling album of all time and crowned Michael Jackson the King of Pop.'},
+{y:1982,mo:8,d:1, cat:'pop',g:G.purp,ic:'🕹️',t:'Commodore 64',b:'A computer for the masses.',x:'The Commodore 64 launched in 1982 and became the best-selling single computer model ever, bringing programming and games into millions of homes.'},
+{y:1982,mo:9,d:19,cat:'pop',g:G.gold,ic:'😀',t:'The First Emoticon',b:':-) is born.',x:'On September 19, 1982, computer scientist Scott Fahlman proposed using :-) and :-( online to mark jokes — seeding the entire visual language of digital emotion.'},
+/* 1983 */
+{y:1983,mo:1,d:1, cat:'world',g:G.teal,ic:'🌐',t:'The Internet Is Born',b:'ARPANET adopts TCP/IP.',x:'On January 1, 1983, ARPANET switched to the TCP/IP protocol — the technical birth of the network of networks that became the modern internet.'},
+{y:1983,mo:6,d:18,cat:'world',g:G.blue,ic:'🚀',t:'Sally Ride in Space',b:'First American woman in orbit.',x:'Sally Ride became the first American woman in space aboard the shuttle Challenger on June 18, 1983, inspiring a generation of girls toward science.'},
+{y:1983,mo:9,d:1, cat:'world',g:G.red, ic:'✈️',t:'KAL 007 Shot Down',b:'Cold War tensions spike.',x:'A Soviet interceptor downed Korean Air Lines Flight 007 on September 1, 1983, killing all 269 aboard and badly inflaming U.S.–Soviet relations.'},
+{y:1983,mo:3,d:23,cat:'world',g:G.grey,ic:'🛰️',t:'“Star Wars” Defense',b:'Reagan unveils SDI.',x:'Reagan announced the Strategic Defense Initiative in March 1983, an ambitious missile-shield proposal that critics quickly nicknamed “Star Wars.”'},
+{y:1983,mo:2,d:28,cat:'pop',g:G.gold,ic:'🚁',t:'M*A*S*H Finale',b:'105M say goodbye.',x:'The series finale aired February 28, 1983, watched by over 105 million people — still the most-watched scripted television episode in U.S. history.'},
+{y:1983,mo:5,d:25,cat:'pop',g:G.teal,ic:'🐻',t:'Return of the Jedi',b:'The Ewoks arrive.',x:'The original Star Wars trilogy concluded May 25, 1983, defeating the Empire, redeeming Darth Vader, and delighting audiences worldwide.'},
+{y:1983,mo:12,d:2,cat:'pop',g:G.purp,ic:'🧟',t:'“Thriller” Video Premieres',b:'A 14-minute MTV event.',x:'Michael Jackson’s landmark “Thriller” video debuted December 2, 1983, redefining the music video as a piece of cinematic spectacle.'},
+/* 1984 */
+{y:1984,mo:7,d:28,cat:'world',g:G.gold,ic:'🏅',t:'LA Summer Olympics',b:'America hosts amid a boycott.',x:'The 1984 Los Angeles Olympics, boycotted by the USSR, proved a commercial triumph and a showcase for stars like sprinter Carl Lewis.'},
+{y:1984,mo:11,d:6,cat:'world',g:G.blue,ic:'🇺🇸',t:'Reagan’s Landslide',b:'49 of 50 states.',x:'Reagan won reelection in November 1984 in one of the largest electoral landslides in U.S. history, carrying 49 of the 50 states.'},
+{y:1984,mo:12,d:3,cat:'world',g:G.grey,ic:'🏭',t:'Bhopal Disaster',b:'History’s worst industrial accident.',x:'A toxic gas leak at a Union Carbide plant in Bhopal, India, on December 3, 1984, killed thousands in what remains the deadliest industrial disaster ever.'},
+{y:1984,mo:1,d:24,cat:'pop',g:G.blue,ic:'🍎',t:'The Macintosh',b:'“1984” won’t be like 1984.',x:'Apple launched the Macintosh on January 24, 1984 — days after its iconic Super Bowl ad — bringing the friendly graphical interface to ordinary people.'},
+{y:1984,mo:6,d:8, cat:'pop',g:G.teal,ic:'👻',t:'Ghostbusters',b:'“Who you gonna call?”',x:'Ghostbusters opened June 8, 1984, becoming a comedy blockbuster, a chart-topping theme song, and an inescapable pop-culture juggernaut.'},
+{y:1984,mo:6,d:25,cat:'pop',g:G.purp,ic:'💜',t:'Prince’s Purple Rain',b:'A film and album phenomenon.',x:'Prince released Purple Rain in 1984, topping the charts for weeks and winning an Academy Award while defining his genre-blending genius.'},
+{y:1984,mo:10,d:26,cat:'pop',g:G.red, ic:'🤖',t:'The Terminator',b:'“I’ll be back.”',x:'James Cameron’s The Terminator premiered in October 1984, launching a franchise and sealing Arnold Schwarzenegger’s movie stardom.'},
+{y:1984,mo:12,d:7,cat:'pop',g:G.gold,ic:'🎤',t:'Band Aid',b:'“Do They Know It’s Christmas?”',x:'British and Irish stars recorded the charity single in late 1984 to fight Ethiopian famine, igniting the era of the celebrity benefit record.'},
+/* 1985 */
+{y:1985,mo:3,d:11,cat:'world',g:G.red, ic:'🇷🇺',t:'Gorbachev Takes Power',b:'Glasnost and perestroika begin.',x:'Mikhail Gorbachev became Soviet leader in March 1985, launching reforms of openness and restructuring that would help bring the Cold War to an end.'},
+{y:1985,mo:4,d:23,cat:'world',g:G.red, ic:'🥤',t:'New Coke',b:'A marketing misfire.',x:'Coca-Cola changed its century-old formula in April 1985 to public outrage, reversing course within three months and reviving “Coca-Cola Classic.”'},
+{y:1985,mo:9,d:1, cat:'world',g:G.blue,ic:'🚢',t:'Titanic Wreck Found',b:'Discovered 2.5 miles down.',x:'A joint expedition located the wreck of RMS Titanic on the Atlantic floor on September 1, 1985 — 73 years after the liner sank.'},
+{y:1985,mo:7,d:13,cat:'pop',g:G.gold,ic:'🎤',t:'Live Aid',b:'The global jukebox.',x:'On July 13, 1985, the Live Aid concerts in London and Philadelphia raised millions for famine relief before a worldwide audience of nearly 1.9 billion.'},
+{y:1985,mo:1,d:28,cat:'pop',g:G.teal,ic:'🌍',t:'“We Are the World”',b:'USA for Africa.',x:'Recorded January 28, 1985 by dozens of superstars in a single night, the charity anthem became one of the best-selling singles of all time.'},
+{y:1985,mo:7,d:3, cat:'pop',g:G.purp,ic:'🚗',t:'Back to the Future',b:'88 mph to 1955.',x:'Back to the Future sped into theaters July 3, 1985, becoming the year’s top film and an enduring, beloved time-travel adventure.'},
+{y:1985,mo:2,d:15,cat:'pop',g:G.grey,ic:'🎒',t:'The Breakfast Club',b:'A defining teen film.',x:'John Hughes’s The Breakfast Club premiered in February 1985, capturing ’80s adolescence so sharply it spoke for an entire generation.'},
+{y:1985,mo:10,d:18,cat:'pop',g:G.red, ic:'🍄',t:'Nintendo & Super Mario',b:'The NES revives gaming.',x:'Nintendo launched the NES with Super Mario Bros. in North America in late 1985, single-handedly reviving a video-game industry many had declared dead.'},
+/* 1986 */
+{y:1986,mo:1,d:28,cat:'world',g:G.blue,ic:'🚀',t:'Challenger Disaster',b:'Tragedy 73 seconds after liftoff.',x:'Space Shuttle Challenger broke apart on January 28, 1986, killing all seven aboard including teacher Christa McAuliffe — watched live by millions of schoolchildren.'},
+{y:1986,mo:4,d:26,cat:'world',g:G.teal,ic:'☢️',t:'Chernobyl',b:'The worst nuclear accident.',x:'A reactor at Chernobyl exploded on April 26, 1986, spreading radioactive fallout across Europe and forcing the permanent evacuation of an entire city.'},
+{y:1986,mo:11,d:3,cat:'world',g:G.grey,ic:'🕵️',t:'Iran–Contra Affair',b:'A scandal rocks Reagan.',x:'Revelations in November 1986 that the U.S. had secretly sold arms to Iran to fund Nicaraguan rebels sparked the gravest scandal of the Reagan presidency.'},
+{y:1986,mo:7,d:3, cat:'world',g:G.gold,ic:'🗽',t:'Lady Liberty at 100',b:'A centennial celebration.',x:'The newly restored Statue of Liberty’s centennial was celebrated in July 1986 with a spectacular festival of tall ships and fireworks in New York Harbor.'},
+{y:1986,mo:5,d:16,cat:'pop',g:G.blue,ic:'✈️',t:'Top Gun',b:'Need for speed.',x:'Top Gun roared into theaters in May 1986, becoming the year’s top film and a Tom Cruise, aviator-sunglasses, bomber-jacket phenomenon.'},
+{y:1986,mo:9,d:8, cat:'pop',g:G.purp,ic:'🎙️',t:'Oprah Goes National',b:'A talk-show era begins.',x:'The Oprah Winfrey Show launched nationally in September 1986, beginning a media empire and reinventing the daytime talk show.'},
+{y:1986,mo:11,d:22,cat:'pop',g:G.red, ic:'🥊',t:'Tyson, Youngest Champ',b:'20 years old and unstoppable.',x:'Mike Tyson became the youngest heavyweight boxing champion in history in November 1986 at just 20 years old, a fearsome force in the ring.'},
+/* 1987 */
+{y:1987,mo:10,d:19,cat:'world',g:G.red, ic:'📉',t:'Black Monday',b:'Markets crash worldwide.',x:'On October 19, 1987, the Dow Jones plunged 22.6% in a single day — the largest one-day percentage drop in its history — as panic swept global markets.'},
+{y:1987,mo:6,d:12,cat:'world',g:G.grey,ic:'🧱',t:'“Tear Down This Wall”',b:'Reagan challenges Gorbachev.',x:'Standing at the Brandenburg Gate on June 12, 1987, Reagan demanded, “Mr. Gorbachev, tear down this wall!” — a defining Cold War rallying cry.'},
+{y:1987,mo:10,d:16,cat:'world',g:G.gold,ic:'👶',t:'Baby Jessica Rescued',b:'58 hours in a Texas well.',x:'America held its breath as rescuers freed 18-month-old Jessica McClure from a backyard well in Texas in October 1987 after a tense 58-hour ordeal.'},
+{y:1987,mo:4,d:19,cat:'pop',g:G.gold,ic:'📺',t:'The Simpsons Debut',b:'Shorts on Tracey Ullman.',x:'Matt Groening’s yellow family first appeared as crude animated shorts on The Tracey Ullman Show in April 1987, two years before their own hit series.'},
+{y:1987,mo:8,d:31,cat:'pop',g:G.purp,ic:'🕺',t:'Michael Jackson’s Bad',b:'Following up Thriller.',x:'Jackson released Bad in 1987, spawning five number-one singles and a record-shattering world tour that confirmed his global reign.'},
+{y:1987,mo:3,d:9, cat:'pop',g:G.blue,ic:'🎸',t:'U2’s The Joshua Tree',b:'A band becomes legendary.',x:'U2 released The Joshua Tree in March 1987, an instant classic that catapulted the Irish band into the ranks of the world’s biggest acts.'},
+{y:1987,mo:8,d:21,cat:'pop',g:G.rose,ic:'💃',t:'Dirty Dancing',b:'“Nobody puts Baby in a corner.”',x:'Dirty Dancing premiered in August 1987, becoming a surprise word-of-mouth smash and an enduring romance with an unforgettable soundtrack.'},
+/* 1988 */
+{y:1988,mo:12,d:21,cat:'world',g:G.grey,ic:'🛩️',t:'Lockerbie Bombing',b:'Pan Am 103 destroyed.',x:'A terrorist bomb destroyed Pan Am Flight 103 over Lockerbie, Scotland, on December 21, 1988, killing 270 people in the air and on the ground.'},
+{y:1988,mo:9,d:17,cat:'world',g:G.gold,ic:'🏅',t:'Seoul Olympics',b:'Drama on the world stage.',x:'The 1988 Seoul Summer Olympics featured Ben Johnson’s shocking doping scandal and a notable thaw in Cold War sporting tensions.'},
+{y:1988,mo:11,d:8,cat:'world',g:G.blue,ic:'🇺🇸',t:'Bush Elected',b:'Reagan’s VP wins the White House.',x:'George H. W. Bush won the presidency in November 1988, extending Republican control of the White House after Reagan’s two full terms.'},
+{y:1988,mo:6,d:22,cat:'pop',g:G.teal,ic:'🐰',t:'Who Framed Roger Rabbit',b:'Toons meet live action.',x:'This groundbreaking 1988 film seamlessly blended hand-drawn animation with live action — a technical marvel and a major box-office hit.'},
+{y:1988,mo:7,d:15,cat:'pop',g:G.red, ic:'💥',t:'Die Hard',b:'“Yippee-ki-yay.”',x:'Die Hard premiered in July 1988, turning Bruce Willis into an action star and rewriting the rulebook for the modern action movie.'},
+{y:1988,mo:12,d:16,cat:'pop',g:G.purp,ic:'🎰',t:'Rain Man',b:'Best Picture winner.',x:'Rain Man opened in December 1988 and went on to win four Academy Awards, including Best Picture, for its tender portrait of two estranged brothers.'},
+{y:1988,mo:4,d:1, cat:'pop',g:G.grey,ic:'📖',t:'A Brief History of Time',b:'Hawking’s cosmic bestseller.',x:'Stephen Hawking’s A Brief History of Time, published in 1988, made black holes and the Big Bang into an improbable global bestseller.'},
+/* 1989 */
+{y:1989,mo:11,d:9,cat:'world',g:G.gold,ic:'🧱',t:'Berlin Wall Falls',b:'The Cold War thaws.',x:'On November 9, 1989, jubilant crowds began tearing down the Berlin Wall — the defining image of communism’s collapse across Eastern Europe.'},
+{y:1989,mo:6,d:4, cat:'world',g:G.red, ic:'🕊️',t:'Tiananmen Square',b:'A lone figure faces the tanks.',x:'Chinese authorities violently crushed pro-democracy protests in Beijing on June 4, 1989; the image of “Tank Man” halting a column of tanks became iconic.'},
+{y:1989,mo:3,d:24,cat:'world',g:G.teal,ic:'🛢️',t:'Exxon Valdez',b:'A catastrophic oil spill.',x:'The tanker Exxon Valdez ran aground in Alaska’s Prince William Sound on March 24, 1989, spilling millions of gallons of crude in a devastating disaster.'},
+{y:1989,mo:3,d:12,cat:'world',g:G.blue,ic:'🕸️',t:'The World Wide Web',b:'Berners-Lee’s proposal.',x:'In March 1989, Tim Berners-Lee circulated a modest proposal at CERN for an “information management” system — the blueprint for the World Wide Web.'},
+{y:1989,mo:6,d:23,cat:'pop',g:G.grey,ic:'🦇',t:'Batman',b:'Burton’s Dark Knight.',x:'Tim Burton’s Batman premiered in June 1989, igniting blockbuster “Batmania” and laying the groundwork for modern superhero cinema.'},
+{y:1989,mo:11,d:17,cat:'pop',g:G.blue,ic:'🧜',t:'The Little Mermaid',b:'Disney’s renaissance begins.',x:'The Little Mermaid swam into theaters in November 1989, reviving Disney’s animation studio and launching a new golden age of animated musicals.'},
+{y:1989,mo:7,d:5, cat:'pop',g:G.gold,ic:'☕',t:'Seinfeld Pilot',b:'A show about nothing.',x:'The Seinfeld pilot aired in July 1989, the quiet beginning of what would become one of the most influential sitcoms in television history.'},
+{y:1989,mo:7,d:31,cat:'pop',g:G.purp,ic:'🎮',t:'The Game Boy',b:'Gaming goes portable.',x:'Nintendo’s Game Boy launched in North America in 1989, bundled with Tetris, and made handheld gaming an unstoppable worldwide craze.'}
+];
+
+/* ============================================================
+   layout / engine                                              */
+const MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const PXY = 1180;                 // pixels per year along the track
+const Y0 = 1980, Y1 = 1989;
+const track = document.getElementById('track');
+const vp = document.getElementById('viewport');
+
+let W = window.innerWidth, H = window.innerHeight;
+let PAD = W/2;                    // leading padding so item 0 can sit on the needle
+const pos = d => (d.y - Y0) + (d.mo-1 + (d.d-1)/31)/12;   // 0..~10 along decade
+
+// build ghost year numbers
+for(let y=Y0; y<=Y1; y++){
+  const e = document.createElement('div');
+  e.className='yearMark'; e.textContent=y;
+  e._x = (y-Y0)+0.5;             // centre of the year
+  track.appendChild(e);
+}
+
+// lane packing: keep cards in a category from overlapping by stacking sub-rows
+function buildCards(){
+  const cards = [];
+  const sub = {world:[[],[]], pop:[[],[]]};   // up to 2 sub-rows per groove
+  const MINGAP = 150;                          // min horizontal px between same-row cards
+  const sorted = [...DATA].map((d,i)=>({d,i,px:pos(d)*PXY})).sort((a,b)=>a.px-b.px);
+
+  sorted.forEach(o=>{
+    const rows = sub[o.d.cat];
+    let row = 0;
+    // choose first sub-row whose last card is far enough away
+    if(rows[0].length && o.px - rows[0][rows[0].length-1] < MINGAP){
+      row = (rows[1].length===0 || o.px - rows[1][rows[1].length-1] >= MINGAP) ? 1 : 0;
+    }
+    rows[row].push(o.px);
+    cards.push({...o, row});
+  });
+  return cards;
+}
+
+function laneY(cat,row){
+  // upper groove = world, lower = pop, with two sub-rows each fanning from centre
+  const base = cat==='world' ? -1 : 1;
+  const near = 0.20, far = 0.345;
+  return 0.5 + base*(row===0?near:far);   // fraction of viewport height
+}
+
+let CARDS = buildCards();
+const els = CARDS.map(c=>{
+  const card = document.createElement('div');
+  card.className = 'card '+c.d.cat;
+  card._x = c.px + PAD;            // absolute x within track
+  card._fy = laneY(c.d.cat,c.row); // fractional y
+  card._cat = c.d.cat;
+  card.innerHTML =
+    `<div class="frame">
+       <div class="photo" style="background:${c.d.g}">${c.d.ic}</div>
+       <div class="meta">
+         <div class="date"><span class="dot ${c.d.cat==='world'?'w':'p'}" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:currentColor;box-shadow:0 0 7px currentColor"></span><b>${c.d.d} ${MONTHS[c.d.mo]} ${c.d.y}</b></div>
+         <div class="headline">${c.d.t}</div>
+         <div class="blurb">${c.d.b}</div>
+         <div class="desc">${c.d.x}</div>
+       </div>
+     </div>`;
+  card.addEventListener('click',()=>{ target = card._x - PAD; });
+  track.appendChild(card);
+  return {card, data:c.d, ax:c.px};
+});
+
+const maxScroll = pos(DATA.reduce((a,b)=>pos(a)>pos(b)?a:b)) * PXY;
+
+// scroll state
+let cur = 0, target = 0, vel = 0;
+let activeIdx = -1;
+
+function setTrackWidth(){ track.style.width = (PAD*2 + maxScroll) + 'px'; }
+
+function onResize(){
+  W = window.innerWidth; H = window.innerHeight; PAD = W/2;
+  els.forEach((o,k)=>{ o.card._x = CARDS[k].px + PAD; });
+  for(const ym of track.querySelectorAll('.yearMark')) ym.style.left = (ym._x*PXY + PAD) + 'px';
+  setTrackWidth();
+}
+setTrackWidth();
+for(const ym of track.querySelectorAll('.yearMark')) ym.style.left = (ym._x*PXY + PAD) + 'px';
+window.addEventListener('resize', onResize);
+
+/* ---- scrubber ticks ---- */
+const scrub = document.getElementById('scrub');
+const fill = document.getElementById('scrubFill');
+const playhead = document.getElementById('playhead');
+const ticks = [];
+for(let y=Y0;y<=Y1;y++){
+  const t=document.createElement('div');
+  t.className='tick'; t.style.left=((y-Y0)/(Y1-Y0)*100)+'%';
+  t.innerHTML=`<i></i><span>${y}</span>`;
+  scrub.appendChild(t); ticks.push({el:t,y});
+}
+
+/* ---- input ---- */
+vp.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const d = Math.abs(e.deltaX)>Math.abs(e.deltaY)? e.deltaX : e.deltaY;
+  target = clamp(target + d*1.1, 0, maxScroll);
+  hideHint();
+},{passive:false});
+
+let dragging=false, lastX=0, moved=false;
+vp.addEventListener('pointerdown',e=>{
+  dragging=true; moved=false; lastX=e.clientX; vel=0;
+  document.body.classList.add('grabbing');
+  vp.setPointerCapture(e.pointerId);
+});
+vp.addEventListener('pointermove',e=>{
+  if(!dragging) return;
+  const dx = e.clientX - lastX; lastX = e.clientX;
+  if(Math.abs(dx)>2) moved=true;
+  target = clamp(target - dx, 0, maxScroll);
+  cur = target;            // direct follow while dragging for 1:1 feel
+  vel = -dx;
+  hideHint();
+});
+function endDrag(){ dragging=false; document.body.classList.remove('grabbing'); }
+vp.addEventListener('pointerup',endDrag);
+vp.addEventListener('pointercancel',endDrag);
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'){ step(1); e.preventDefault(); }
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ step(-1); e.preventDefault(); }
+  else if(e.key==='Home'){ target=0; }
+  else if(e.key==='End'){ target=maxScroll; }
+});
+function step(dir){
+  hideHint();
+  // snap to next/prev event centre relative to current scroll
+  const here = cur;
+  const xs = els.map(o=>o.ax*0 + (o.card._x-PAD)).sort((a,b)=>a-b);
+  let tgt = dir>0 ? xs.find(x=>x>here+1) : [...xs].reverse().find(x=>x<here-1);
+  if(tgt==null) tgt = clamp(here, 0, maxScroll);
+  target = clamp(tgt,0,maxScroll);
+}
+
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+
+/* ---- hint fade ---- */
+const hint=document.getElementById('hint'); let hintGone=false;
+function hideHint(){ if(!hintGone){ hintGone=true; hint.style.opacity=0; } }
+setTimeout(()=>{ if(!hintGone) hideHint(); }, 9000);
+
+/* ---- readout ---- */
+const rdDate=document.querySelector('#readout .rd-date');
+const rdCat =document.querySelector('#readout .rd-cat');
+
+/* ============================================================
+   render loop                                                  */
+const CENTER = ()=>W/2;
+function frame(){
+  // ease toward target (unless actively dragging, where cur tracks directly)
+  if(!dragging){
+    if(Math.abs(vel)>0.4){           // inertia after release
+      target = clamp(target + vel, 0, maxScroll);
+      vel *= 0.92;
+    }
+    cur += (target - cur) * 0.14;
+    if(Math.abs(target-cur) < 0.05) cur = target;
+  }
+
+  track.style.transform = `translateX(${-cur}px)`;
+
+  const cx = CENTER();
+  let best=-1, bestDist=1e9;
+
+  for(let i=0;i<els.length;i++){
+    const o=els[i], card=o.card;
+    const sx = card._x - cur;                 // screen x of card centre
+    const dist = Math.abs(sx - cx);
+    card.style.top = (o.card._fy*H)+'px';
+    card.style.left = card._x+'px';
+
+    // cull far-offscreen cards for performance
+    if(sx < -260 || sx > W+260){
+      if(card.style.display!=='none') card.style.display='none';
+      continue;
+    } else if(card.style.display==='none') card.style.display='';
+
+    const prox = clamp(1 - dist/640, 0, 1);          // 0 far … 1 on needle
+    const s = 0.80 + prox*prox*0.22;                 // lens-style growth
+    const op = 0.32 + prox*0.68;
+    card.style.transform = `translate(-50%,-50%) scale(${s})`;
+    card.style.opacity = op;
+    if(!card.classList.contains('active')) card.style.zIndex = Math.round(prox*40)+3;
+
+    if(dist<bestDist){ bestDist=dist; best=i; }
+  }
+
+  // the card under the needle becomes "active" (text window opens)
+  const onNeedle = bestDist < 150 ? best : -1;
+  if(onNeedle !== activeIdx){
+    if(activeIdx>=0 && els[activeIdx]) els[activeIdx].card.classList.remove('active');
+    activeIdx = onNeedle;
+    if(activeIdx>=0){
+      const o=els[activeIdx];
+      o.card.classList.add('active');
+      o.card.style.zIndex=60;
+      rdDate.textContent = `${o.data.d} ${MONTHS[o.data.mo]} ${o.data.y}`;
+      rdCat.textContent  = o.data.cat==='world' ? 'World Event' : 'Pop Culture';
+      rdCat.style.color  = o.data.cat==='world' ? 'var(--world)' : 'var(--pop)';
+    }
+  }
+  if(activeIdx<0){
+    // show the year we're hovering over
+    const yr = clamp(Math.round(Y0 + cur/PXY), Y0, Y1);
+    rdDate.textContent = yr;
+    rdCat.textContent = 'scrub the decade';
+    rdCat.style.color = 'var(--dim)';
+  }
+
+  // scrubber
+  const p = maxScroll>0 ? cur/maxScroll : 0;
+  fill.style.width = (p*100)+'%';
+  const sw = scrub.clientWidth;
+  playhead.style.left = (p*sw)+'px';
+  const yrNow = Y0 + cur/PXY;
+  ticks.forEach(t=> t.el.classList.toggle('on', Math.abs(t.y-Math.round(yrNow))<0.5 ));
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// kick off centred on the very first headline
+target = 0; cur = 0;
+</script>
+</body>
+</html>
