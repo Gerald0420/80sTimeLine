@@ -135,6 +135,15 @@
     background:linear-gradient(135deg,rgba(255,255,255,0.16),transparent 45%);
     pointer-events:none;
   }
+  .photo .emoji{position:relative;z-index:1;}
+  .photo.has-photo{background-size:cover !important;background-position:center;}
+  .photo.has-photo .emoji{display:none;}
+  .photo .credit{position:absolute;left:0;right:0;bottom:0;z-index:2;display:none;
+    font-size:7.5px;line-height:1.3;letter-spacing:.01em;color:#dcdcdc;
+    background:linear-gradient(transparent,rgba(0,0,0,.72));padding:7px 6px 3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;}
+  .photo.has-photo .credit{display:block;}
+  .photo .credit a{color:#fff;text-decoration:none;}
   .meta{padding:9px 11px 11px;}
   .date{
     font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
@@ -489,7 +498,7 @@ const els = CARDS.map(c=>{
   card._cat = c.d.cat;
   card.innerHTML =
     `<div class="frame">
-       <div class="photo" style="background:${c.d.g}">${c.d.ic}</div>
+       <div class="photo" style="background:${c.d.g}"><span class="emoji">${c.d.ic}</span><span class="credit"></span></div>
        <div class="meta">
          <div class="date"><span class="dot ${c.d.cat==='world'?'w':'p'}" style="width:7px;height:7px;border-radius:50%;display:inline-block;background:currentColor;box-shadow:0 0 7px currentColor"></span><b>${c.d.d} ${MONTHS[c.d.mo]} ${c.d.y}</b></div>
          <div class="headline">${c.d.t}</div>
@@ -649,6 +658,60 @@ const rdDate=document.querySelector('#readout .rd-date');
 const rdCat =document.querySelector('#readout .rd-cat');
 
 /* ============================================================
+   Wikipedia lead photos — Commons (free-licensed) only.
+   Commons hosts only freely-licensed media, so a thumbnail served
+   from /wikipedia/commons/ is safe to reuse; /wikipedia/en/ means a
+   local fair-use file, which we skip (keeping the emoji).            */
+const titleFromSlug = s => decodeURIComponent(s).replace(/_/g,' ');
+function stripHTML(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
+const API = 'https://en.wikipedia.org/w/api.php?format=json&origin=*&action=query&';
+
+function ensurePhoto(o){
+  if(o._ps) return;                 // only attempt once per card
+  o._ps = 'loading';
+  const slug = WIKI[o.data.t];
+  if(!slug){ o._ps='none'; return; }
+  const title = titleFromSlug(slug);
+  fetch(API+'prop=pageimages&piprop=thumbnail|name&pithumbsize=480&titles='+encodeURIComponent(title))
+    .then(r=>r.json())
+    .then(d=>{
+      const pages = d && d.query && d.query.pages;
+      if(!pages) throw 0;
+      const pg = pages[Object.keys(pages)[0]];
+      const thumb = pg && pg.thumbnail && pg.thumbnail.source;
+      if(!thumb || thumb.indexOf('/commons/') === -1){ o._ps='none'; return; }  // not free → keep emoji
+      applyPhoto(o, thumb);
+      fetchCredit(o, pg.pageimage);
+    })
+    .catch(()=>{ o._ps='none'; });
+}
+function applyPhoto(o, src){
+  const ph = o.card.querySelector('.photo'); if(!ph) return;
+  const img = new Image();
+  img.onload  = ()=>{ ph.style.backgroundImage = `url("${src}")`; ph.classList.add('has-photo'); o._ps='done'; };
+  img.onerror = ()=>{ o._ps='none'; };
+  img.src = src;
+}
+function fetchCredit(o, file){
+  if(!file) return;
+  fetch(API+'prop=imageinfo&iiprop=extmetadata|url&titles='+encodeURIComponent('File:'+file))
+    .then(r=>r.json())
+    .then(d=>{
+      const pages = d && d.query && d.query.pages; if(!pages) return;
+      const pg = pages[Object.keys(pages)[0]];
+      const ii = pg && pg.imageinfo && pg.imageinfo[0]; if(!ii) return;
+      const m = ii.extmetadata || {};
+      const author = stripHTML(m.Artist && m.Artist.value) || 'Wikimedia Commons';
+      const lic    = stripHTML(m.LicenseShortName && m.LicenseShortName.value) || '';
+      const url    = ii.descriptionurl || ('https://commons.wikimedia.org/wiki/File:'+encodeURIComponent(file));
+      const label  = (author + (lic ? ' · ' + lic : '')).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      const cr = o.card.querySelector('.credit');
+      if(cr) cr.innerHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    })
+    .catch(()=>{});
+}
+
+/* ============================================================
    render loop                                                  */
 const CENTER = ()=>W/2;
 function frame(){
@@ -681,6 +744,7 @@ function frame(){
     } else if(card.style.display==='none') card.style.display='';
 
     const prox = clamp(1 - dist/640, 0, 1);          // 0 far … 1 on needle
+    if(prox > 0.4) ensurePhoto(o);                   // lazy-load the Wikipedia photo as it nears
     const s = 0.80 + prox*prox*0.22;                 // lens-style growth
     const op = 0.32 + prox*0.68;
     card.style.transform = `translate(-50%,-50%) scale(${s})`;
