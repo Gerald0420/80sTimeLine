@@ -13,7 +13,7 @@
     --groove:rgba(255,255,255,0.028);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;overflow:hidden;background:#000;}
+  html,body{height:100%;overflow:hidden;background:#000;overscroll-behavior:none;}
   body{
     font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
     color:var(--ink);
@@ -97,7 +97,7 @@
   .learn:hover{background:rgba(255,255,255,.09);}
 
   /* ---------- viewport / track ---------- */
-  #viewport{position:fixed;inset:0;z-index:10;overflow:hidden;}
+  #viewport{position:fixed;inset:0;z-index:10;overflow:hidden;touch-action:none;}
   #track{position:absolute;top:0;left:0;height:100%;will-change:transform;}
 
   /* giant ghost year numbers in the background */
@@ -258,7 +258,7 @@
     <div id="playhead"></div>
   </div>
 
-  <div id="hint"><b>Scroll</b> or <b>drag</b> &nbsp;·&nbsp; <b>← →</b> to step &nbsp;·&nbsp; pause on the needle to read</div>
+  <div id="hint"><b>Swipe</b> or <b>scroll</b> &nbsp;·&nbsp; <b>tap</b> a card &nbsp;·&nbsp; pause on the needle to read</div>
 
 <script>
 /* ============================================================
@@ -506,7 +506,7 @@ const els = CARDS.map(c=>{
          <div class="desc">${c.d.x}<a class="learn" href="${wikiURL(c.d.t)}" target="_blank" rel="noopener noreferrer">Read more on Wikipedia&nbsp;↗</a></div>
        </div>
      </div>`;
-  card.addEventListener('click',()=>{ target = card._x - PAD; });
+  card.addEventListener('click',()=>{ target = clamp(card._x - PAD, 0, maxScroll); snapAfterRest = true; hideHint(); });
   track.appendChild(card);
   return {card, data:c.d, ax:c.px};
 });
@@ -515,6 +515,7 @@ const maxScroll = pos(DATA.reduce((a,b)=>pos(a)>pos(b)?a:b)) * PXY;
 
 // scroll state
 let cur = 0, target = 0, vel = 0;
+let snapAfterRest = false;          // gently land on a headline after a touch flick
 let activeIdx = -1;
 
 function setTrackWidth(){ track.style.width = (PAD*2 + maxScroll) + 'px'; }
@@ -584,6 +585,7 @@ function runSearch(){
 function jumpTo(k){
   const r = curRes[k]; if(!r) return;
   target = clamp(r.o.card._x - PAD, 0, maxScroll);
+  snapAfterRest = true;
   sResults.style.display='none';
   sInput.blur();
   hideHint();
@@ -606,28 +608,48 @@ vp.addEventListener('wheel',e=>{
   e.preventDefault();
   const d = Math.abs(e.deltaX)>Math.abs(e.deltaY)? e.deltaX : e.deltaY;
   target = clamp(target + d*1.1, 0, maxScroll);
+  snapAfterRest = false;          // free scrolling on trackpad/mouse — no auto-snap
   hideHint();
 },{passive:false});
 
-let dragging=false, lastX=0, moved=false;
+let dragging=false, lastX=0, lastT=0, totalMove=0, velMs=0, clickBlocked=false;
+function nearestTarget(x){
+  let best=x, bd=1e9;
+  for(const o of els){ const t=o.card._x - PAD; const d=Math.abs(t - x); if(d<bd){ bd=d; best=t; } }
+  return clamp(best, 0, maxScroll);
+}
 vp.addEventListener('pointerdown',e=>{
-  if(e.target.closest && e.target.closest('a')) return;   // let Wikipedia links tap through
-  dragging=true; moved=false; lastX=e.clientX; vel=0;
+  if(e.target.closest && e.target.closest('a')) return;     // let Wikipedia links tap through
+  dragging=true; totalMove=0; velMs=0; vel=0; clickBlocked=false; snapAfterRest=false;
+  lastX=e.clientX; lastT=e.timeStamp || performance.now();
   document.body.classList.add('grabbing');
-  vp.setPointerCapture(e.pointerId);
+  try{ vp.setPointerCapture(e.pointerId); }catch(_){}
+  hideHint();
 });
 vp.addEventListener('pointermove',e=>{
   if(!dragging) return;
-  const dx = e.clientX - lastX; lastX = e.clientX;
-  if(Math.abs(dx)>2) moved=true;
+  const now = e.timeStamp || performance.now();
+  const dx  = e.clientX - lastX;
+  const dt  = Math.max(1, now - lastT);
+  totalMove += Math.abs(dx);
+  if(totalMove > 6) clickBlocked = true;                    // it's a drag, not a tap
   target = clamp(target - dx, 0, maxScroll);
-  cur = target;            // direct follow while dragging for 1:1 feel
-  vel = -dx;
-  hideHint();
+  cur = target;                                             // 1:1 tracking while dragging
+  velMs = 0.7*velMs + 0.3*(dx/dt);                          // smoothed pointer velocity (px/ms)
+  lastX = e.clientX; lastT = now;
 });
-function endDrag(){ dragging=false; document.body.classList.remove('grabbing'); }
+function endDrag(){
+  if(!dragging) return;
+  dragging=false; document.body.classList.remove('grabbing');
+  vel = clamp(-velMs * 16, -240, 240);                      // hand the flick off to momentum
+  snapAfterRest = true;                                     // settle on the nearest headline
+}
 vp.addEventListener('pointerup',endDrag);
 vp.addEventListener('pointercancel',endDrag);
+// swallow the click that fires after a real drag so it can't snap to a stray card
+vp.addEventListener('click',e=>{
+  if(clickBlocked){ e.stopPropagation(); e.preventDefault(); clickBlocked=false; }
+}, true);
 
 window.addEventListener('keydown',e=>{
   if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')) return;
@@ -644,6 +666,7 @@ function step(dir){
   let tgt = dir>0 ? xs.find(x=>x>here+1) : [...xs].reverse().find(x=>x<here-1);
   if(tgt==null) tgt = clamp(here, 0, maxScroll);
   target = clamp(tgt,0,maxScroll);
+  snapAfterRest = true;
 }
 
 function clamp(v,a,b){ return v<a?a:v>b?b:v; }
@@ -746,12 +769,18 @@ const CENTER = ()=>W/2;
 function frame(){
   // ease toward target (unless actively dragging, where cur tracks directly)
   if(!dragging){
-    if(Math.abs(vel)>0.4){           // inertia after release
+    if(Math.abs(vel) > 0.4){                       // momentum after a flick
       target = clamp(target + vel, 0, maxScroll);
-      vel *= 0.92;
+      if(target===0 || target===maxScroll) vel = 0;    // stop dead at the ends
+      else vel *= 0.94;
     }
-    cur += (target - cur) * 0.14;
-    if(Math.abs(target-cur) < 0.05) cur = target;
+    cur += (target - cur) * 0.16;
+    if(Math.abs(target - cur) < 0.05) cur = target;
+    // once motion settles, gently land the nearest headline on the needle (touch only)
+    if(snapAfterRest && Math.abs(vel) < 0.5 && Math.abs(target - cur) < 1){
+      target = nearestTarget(cur);
+      snapAfterRest = false;
+    }
   }
 
   track.style.transform = `translateX(${-cur}px)`;
